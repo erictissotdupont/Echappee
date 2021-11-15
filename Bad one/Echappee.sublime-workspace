@@ -1,0 +1,356 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"ESP_ERROR",
+				"ESP_ERROR_CHECK"
+			],
+			[
+				"uint",
+				"uint32_t"
+			],
+			[
+				"ESP",
+				"ESP_LOGI"
+			],
+			[
+				"g_",
+				"g_PutEvents"
+			],
+			[
+				"ESP_LO",
+				"ESP_LOGI"
+			],
+			[
+				"set",
+				"setsockopt"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"file": "main/Echappee_main.c",
+			"settings":
+			{
+				"buffer_size": 39979,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "/Users/etissotdupont/Documents/Projects/esp/ulp_adc/main/ulp/adc.S",
+			"settings":
+			{
+				"buffer_size": 3109,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "/* ULP Example: using ADC in deep sleep\n\n   This example code is in the Public Domain (or CC0 licensed, at your option.)\n\n   Unless required by applicable law or agreed to in writing, this\n   software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR\n   CONDITIONS OF ANY KIND, either express or implied.\n\n   This file contains assembly code which runs on the ULP.\n\n   ULP wakes up to run this code at a certain period, determined by the values\n   in SENS_ULP_CP_SLEEP_CYCx_REG registers. On each wake up, the program\n   measures input voltage on the given ADC channel 'adc_oversampling_factor'\n   times. Measurements are accumulated and average value is calculated.\n   Average value is compared to the two thresholds: 'low_thr' and 'high_thr'.\n   If the value is less than 'low_thr' or more than 'high_thr', ULP wakes up\n   the chip from deep sleep.\n*/\n\n/* ULP assembly files are passed through C preprocessor first, so include directives\n   and C macros may be used in these files \n */\n#include \"soc/rtc_cntl_reg.h\"\n#include \"soc/soc_ulp.h\"\n\n\t/* ADC1 channel 6, GPIO34 */\n\t.set adc_channel, 0\n\n\t/* Configure the number of ADC samples to average on each measurement.\n\t   For convenience, make it a power of 2. */\n\t.set adc_oversampling_factor_log, 2\n\t.set adc_oversampling_factor, (1 << adc_oversampling_factor_log)\n\n\t/* Define variables, which go into .bss section (zero-initialized data) */\n\t.bss\n\n\t/* Low threshold of ADC reading.\n\t   Set by the main program. */\n\t.global low_thr\nlow_thr:\n\t.long 0\n\n\t/* High threshold of ADC reading.\n\t   Set by the main program. */\n\t.global high_thr\nhigh_thr:\n\t.long 0\n\n\t/* Counter of measurements done */\n\t.global sample_counter\nsample_counter:\n\t.long 0\n\n\t.global last_result\nlast_result:\n\t.long 0\n\n\t/* Code goes into .text section */\n\t.text\n\t.global entry\nentry:\n\t/* increment sample counter */\n\tmove r3, sample_counter\n\tld r2, r3, 0\n\tadd r2, r2, 1\n\tst r2, r3, 0\n\n\t/* do measurements using ADC */\n\t/* r0 will be used as accumulator */\n\tmove r0, 0\n\t/* initialize the loop counter */\n\tstage_rst\nmeasure:\n\t/* measure and add value to accumulator */\n\tadc r1, 0, adc_channel + 1\n\tadd r0, r0, r1\n\t/* increment loop counter and check exit condition */\n\tstage_inc 1\n\tjumps measure, adc_oversampling_factor, lt\n\n\t/* divide accumulator by adc_oversampling_factor.\n\t   Since it is chosen as a power of two, use right shift */\n\trsh r0, r0, adc_oversampling_factor_log\n\t/* averaged value is now in r0; store it into last_result */\n\tmove r3, last_result\n\tst r0, r3, 0\n\n\t/* compare with low_thr; wake up if value < low_thr */\n\tmove r3, low_thr\n\tld r3, r3, 0\n\tsub r3, r0, r3\n\tjump wake_up, ov\n\n\t/* compare with high_thr; wake up if value > high_thr */\n\tmove r3, high_thr\n\tld r3, r3, 0\n\tsub r3, r3, r0\n\tjump wake_up, ov\n\n\t/* value within range, end the program */\n\t.global exit\nexit:\n\thalt\n\n\t.global wake_up\nwake_up:\n\t/* Check if the system can be woken up */\n\tREAD_RTC_FIELD(RTC_CNTL_LOW_POWER_ST_REG, RTC_CNTL_RDY_FOR_WAKEUP)\n\tand r0, r0, 1\n\tjump exit, eq\n\n\t/* Wake up the SoC, end program */\n\twake\n\tWRITE_RTC_FIELD(RTC_CNTL_STATE0_REG, RTC_CNTL_ULP_CP_SLP_TIMER_EN, 0)\n\thalt\n",
+			"file": "main/ulp/adc.S",
+			"file_size": 3128,
+			"file_write_time": 132458872644020423,
+			"settings":
+			{
+				"buffer_size": 3109,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/ulp"
+	],
+	"file_history":
+	[
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/component.mk",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/Kconfig.projbuild",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/sdkconfig.defaults",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/CMakeLists.txt",
+		"/Users/etissotdupont/Documents/Projects/esp/esp-idf/examples/system/deep_sleep/main/deep_sleep_example_main.c",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/ulp/adc.S",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/Echappee_main.c",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/main/sdkconfig.defaults",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/sdkconfig",
+		"/Users/etissotdupont/Documents/Projects/esp/esp-idf/examples/wifi/getting_started/station/main/station_example_main.c",
+		"/Users/etissotdupont/Documents/Projects/esp/hello_world/main/hello_world_main.c",
+		"/Users/etissotdupont/Documents/Projects/esp/esp-idf/examples/wifi/fast_scan/main/fast_scan.c",
+		"/Users/etissotdupont/Documents/Projects/esp/Echappee/README.md"
+	],
+	"find":
+	{
+		"height": 39.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+			"start_ulp_program",
+			"RTC",
+			"CONFIG_ESP32_ULP_COPROC_RESERVE_MEM",
+			"CONFIG_ESP32_ULP_COPROC_ENABLED",
+			"1024",
+			"wifi_sta_config_t",
+			"genCurSum",
+			"pin5",
+			"pin39",
+			"genCurr",
+			"GenCurr",
+			"pin36",
+			"ctrl_put_handler",
+			"ctrl",
+			"hello",
+			"hello_get_handler",
+			"hello",
+			"socket(",
+			"IPPROTO_UDP",
+			"setsockopt",
+			"mcast_example_task",
+			"mcast_task",
+			"CONFIG_EXAMPLE_IPV4",
+			"MULTICAST_TTL",
+			"MULTICAST_LOOPBACK"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+			"genCur",
+			"soc",
+			"bat",
+			"gen",
+			"calibrate_put_handler",
+			"calibrate",
+			"homePage"
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 0,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "main/Echappee_main.c",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 39979,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								19011,
+								19011
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/C++/C.sublime-syntax",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 7935.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "/Users/etissotdupont/Documents/Projects/esp/ulp_adc/main/ulp/adc.S",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 3109,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/R/R.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 1017.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "main/ulp/adc.S",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 3109,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								2934,
+								2957
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/R/R.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 1017.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 24.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"pinned_build_system": "",
+	"project": "Echappee.sublime-project",
+	"replace":
+	{
+		"height": 70.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 203.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

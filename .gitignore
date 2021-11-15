@@ -34,3 +34,6 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# ESP32 Build
+build/
