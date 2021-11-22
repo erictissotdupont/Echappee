@@ -125,7 +125,7 @@ static void sample_ADC( tADC_Reading* pADC, bool calibrate )
     
     if( pADC->idx == ADC_AVG_SAMPLE ) 
     {
-      ESP_LOGW( TAG, "ADC[%d] = %d", pADC->ADC_id, pADC->sum / ADC_AVG_SAMPLE );
+      //ESP_LOGW( TAG, "ADC[%d] = %d", pADC->ADC_id, pADC->sum / ADC_AVG_SAMPLE );
     }
 }
 

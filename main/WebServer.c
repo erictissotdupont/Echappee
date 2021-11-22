@@ -369,7 +369,7 @@ httpd_handle_t start_webserver(void)
     return server;
 }
 
-#define MAX_VOLTAGE_CHANGE_FOR_SOC  (0.05f)
+#define MAX_VOLTAGE_CHANGE_FOR_SOC  (0.02f)
 #define VBAT_FULL (12.8f)
 #define VBAT_EMPTY (10.7f)
 #define BATT_CAPACITY (12.0 * 50.0f * 3600.0f)
@@ -393,7 +393,7 @@ void UpdateSensor(
     {
       g_energyGenerated += ( genPower * dT );
     }
-    g_energyStored -= ( genPower * dT );
+    g_energyStored += ( genPower * dT );
   }
   
   if( abs(generatedCurrent) < 0.5 && 
@@ -403,7 +403,8 @@ void UpdateSensor(
     
     if( timeToResetSOC == 0 ) 
     {
-      timeToResetSOC = now + (30LL * 1000000LL);
+      int timeToReset = g_energyStored == 0.0 ? 30 : 300;
+      timeToResetSOC = now + (timeToReset * 1000000LL);
       voltageStart = batterVoltage;
     }
     else if( now > timeToResetSOC )
@@ -413,12 +414,14 @@ void UpdateSensor(
         if( batterVoltage >= VBAT_FULL ) g_energyStored = BATT_CAPACITY;
         else if( batterVoltage <= VBAT_EMPTY ) g_energyStored = 0.0f;
         else
-        {    
+        {
+          float oldEnergy = g_energyStored;
           g_energyStored = BATT_CAPACITY * (batterVoltage-VBAT_EMPTY) / (VBAT_FULL-VBAT_EMPTY);
           
-          ESP_LOGW( TAG, "Battery calibrated with %.2fv to %.0f SOC", 
+          ESP_LOGW( TAG, "Battery calibrated with %.2fv to %.1f %% SOC (from %.1f)", 
             batterVoltage,
-            100.0 * g_energyStored / BATT_CAPACITY ); 
+            100.0 * g_energyStored / BATT_CAPACITY,
+            100.0 * oldEnergy / BATT_CAPACITY ); 
         }      
       }
       timeToResetSOC = 0;      
@@ -429,7 +432,7 @@ void UpdateSensor(
     timeToResetSOC = 0;
   }
   
-  int SOC = (int)(100.0 * g_energyStored / BATT_CAPACITY);
+  float SOC = ( 100.0 * g_energyStored ) / BATT_CAPACITY;
    
   char szGen[64];
   char szBat[64];
@@ -447,14 +450,14 @@ void UpdateSensor(
     batteryCurrent,
     (int)(batteryCurrent * batterVoltage));
   
-  sprintf( szSOC, "\"soc\":\"%d %% | %.1f Wh | %d %% %u\"",
+  sprintf( szSOC, "\"soc\":\"%.0f %% | %.1f Wh | %d %% %u\"",
     SOC,
     g_energyStored / 3600.0,
     (int)((100.0 * pwmDuty) / 8192 ),
     g_getCounter );
     
-  #define MACHINE_EFFICIENCY (0.5)
-  #define HUMAN_EFFICIENCY   (0.25)
+  #define MACHINE_EFFICIENCY (0.48)  // Affects the speed
+  #define HUMAN_EFFICIENCY   (0.25)  // Affects the calories
     
   const struct { 
     float power;
@@ -472,11 +475,12 @@ void UpdateSensor(
     {600.0, 50.1 },
     {900.0, 57.8 }};
   
-  float mechPower = genPower / MACHINE_EFFICIENCY;
+  float mechPower = 0.0;
   float speed = 0.0;
   
   if( genPower > 0.1 )
   {  
+    mechPower = genPower / MACHINE_EFFICIENCY;
     for( int i=1; i< sizeof(PowerToSpeed) / sizeof(PowerToSpeed[0]); i++ )
     {
       if( PowerToSpeed[i].power >= mechPower )
@@ -487,19 +491,30 @@ void UpdateSensor(
         speed += dS * (( mechPower - PowerToSpeed[i-1].power ) / dP );
         break;
       }
-    }
-    
+    }  
     // Accumulated distance in meters
     g_distance += (speed / 3.6) * dT;
   }
     
-  sprintf( szSpeed, "\"speed\":\"%.0f km/h | %.3f km | %.0f W\"",
+  sprintf( szSpeed, "\"speed\":\"%.0f km/h | %.0f W\"",
     speed,
-    g_distance / 1000.0,
     mechPower );
+
+  float distanceInKm = g_distance / 1000.0;
+  float caloriesBurn = g_energyGenerated / ( 4184.0 * MACHINE_EFFICIENCY * HUMAN_EFFICIENCY );
     
-  sprintf( szEnergy, "\"energy\":\"%.1f Cal\"",
-    (g_energyGenerated * MACHINE_EFFICIENCY * HUMAN_EFFICIENCY ) / 4184.0 );
+  if( distanceInKm >= 10.0 )
+  {    
+    sprintf( szEnergy, "\"energy\":\"%.1f Cal | %.1f km\"",
+      caloriesBurn,
+      distanceInKm );
+  }
+  else
+  {
+    sprintf( szEnergy, "\"energy\":\"%.0f Cal | %.3f km\"",
+      caloriesBurn,
+      distanceInKm );
+  }
   
   sprintf( g_sensors, "{%s,%s,%s,%s,%s,\"rld\":%d}",
     szGen,
