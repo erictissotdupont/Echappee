@@ -867,7 +867,7 @@ tADC_Reading ADC[MAX_ADC] = {
                 static float pE = 0.0;
                 float e = ADC[BAT_VOL].value - 14.1;
                 float dT = ( now - lastEnergyTime ) / 1000000.0; // Timer is in uS
-                
+                              
                 // Joules is W x T (in sec)
                 energy += ( ADC[GEN_CUR].value * ADC[BAT_VOL].value * dT );
                 
