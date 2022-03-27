@@ -23,6 +23,7 @@ uint32_t g_getCounter = 0;
 uint32_t g_PutEvents = 0;
 
 float g_energyGenerated = 0.0;
+float g_energySpent = 0.0;
 float g_energyStored = 0.0;
 float g_distance = 0.0;
 
@@ -85,7 +86,7 @@ void set_home_page( int flavor )
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Calibrate' onClick='onButton(1)'>");
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Reset' onClick='onButton(2)'>");
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Bicycle' onClick='onButton(3)'>");
-    strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='OFF' onClick='onButton(5)'>");
+    strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Level' onClick='onButton(5)'>");
     strcat( g_home_page, "</body></html>");
     break;
     
@@ -103,7 +104,7 @@ void set_home_page( int flavor )
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Calibrate' onClick='onButton(1)'>");
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Reset' onClick='onButton(2)'>");
     strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Electric' onClick='onButton(4)'>");
-    strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='OFF' onClick='onButton(5)'>");
+    strcat( g_home_page, "<input id=lfp type='button' style='background-color:lightgray' value='Level' onClick='onButton(5)'>");
     strcat( g_home_page, "</body></html>");
     break;
   }
@@ -296,6 +297,7 @@ static esp_err_t onButton_put_handler(httpd_req_t *req)
             ESP_LOGW( TAG, "RESET");
             g_PutEvents |= PUT_RESET;
             g_energyGenerated = 0.0;
+            g_energySpent = 0.0;
             g_distance = 0.0;
             break;
           case 3:
@@ -305,7 +307,7 @@ static esp_err_t onButton_put_handler(httpd_req_t *req)
             set_home_page( 0 );
             break;   
           case 5:
-            power_off( );
+            change_level( );
             break;
           }
         }
@@ -440,24 +442,22 @@ void UpdateSensor(
   char szSpeed[64];
   char szEnergy[64];
   
-  sprintf( szGen, "\"gen\":\"%.1f A | %.0f W | %.1f Wh\"",
+  sprintf( szGen, "\"gen\":\"%.1f A | %.0f W | %.1f Wh (%.0f J)\"",
     generatedCurrent,
     genPower,
-    g_energyGenerated / 3600.0 );
+    g_energyGenerated / 3600.0,
+    g_energyGenerated );
   
   sprintf( szBat, "\"bat\":\"%.2f V | %.1f A | %d W\"",
     batterVoltage, 
     batteryCurrent,
     (int)(batteryCurrent * batterVoltage));
   
-  sprintf( szSOC, "\"soc\":\"%.0f %% | %.1f Wh | %d %% %u\"",
+  sprintf( szSOC, "\"soc\":\"%.0f %% | %.1f Wh | %d %% Level:%u\"",
     SOC,
     g_energyStored / 3600.0,
     (int)((100.0 * pwmDuty) / 8192 ),
-    g_getCounter );
-    
-  #define MACHINE_EFFICIENCY (0.48)  // Affects the speed
-  #define HUMAN_EFFICIENCY   (0.25)  // Affects the calories
+    get_level( ));
     
   const struct { 
     float power;
@@ -474,13 +474,22 @@ void UpdateSensor(
     {400.0, 43.3 },
     {600.0, 50.1 },
     {900.0, 57.8 }};
+    
+  #define HUMAN_EFFICIENCY   (0.25f)  // Affects the calories
+  
+  #define FUDGE_FACTOR       (1.0f + 0.13f)
+  
+  // The efficiency of the machine depends on how many coils are
+  // connected. 1, 2 or 3  
+  const float LevelEfficiency[] = { 2.0, 1.63, 1.5 };
   
   float mechPower = 0.0;
   float speed = 0.0;
   
   if( genPower > 0.1 )
-  {  
-    mechPower = genPower / MACHINE_EFFICIENCY;
+  { 
+    mechPower = 15.0 + genPower * LevelEfficiency[get_level( )] * FUDGE_FACTOR;
+    
     for( int i=1; i< sizeof(PowerToSpeed) / sizeof(PowerToSpeed[0]); i++ )
     {
       if( PowerToSpeed[i].power >= mechPower )
@@ -492,16 +501,19 @@ void UpdateSensor(
         break;
       }
     }  
+    g_energySpent += mechPower * dT;
+    
     // Accumulated distance in meters
     g_distance += (speed / 3.6) * dT;
   }
     
-  sprintf( szSpeed, "\"speed\":\"%.0f km/h | %.0f W\"",
+  sprintf( szSpeed, "\"speed\":\"%.0f km/h | %.0f W (%.0f W)\"",
     speed,
-    mechPower );
+    mechPower,
+    genPower    );
 
   float distanceInKm = g_distance / 1000.0;
-  float caloriesBurn = g_energyGenerated / ( 4184.0 * MACHINE_EFFICIENCY * HUMAN_EFFICIENCY );
+  float caloriesBurn = g_energySpent / ( 4184.0 * HUMAN_EFFICIENCY );
     
   if( distanceInKm >= 10.0 )
   {    

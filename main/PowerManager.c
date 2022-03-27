@@ -39,6 +39,7 @@ typedef struct {
     float coef;
     float value;
     bool readPending;
+    float slowAvg;
 } tADC_Reading;
 
 // ----------------------------------------------------------------------------
@@ -63,30 +64,34 @@ typedef struct {
 // ----------------------------------------------------------------------------
 
 tADC_Reading ADC[MAX_ADC] = {
-  
-    // Generator current
-    { .ADC_id = ADC_GENERATOR_CURRENT, 
-      .idx = 0, 
-      .offset = 7620 * ADC_AVG_SAMPLE, 
-      .cal = true,  
-      .sample = {0}, 
-      .coef = -0.0045 },
+      // Generator current
+  { .ADC_id = ADC_GENERATOR_CURRENT, 
+    .idx = 0, 
+    .offset = 7620 * ADC_AVG_SAMPLE, 
+    .cal = true,  
+    .sample = {0}, 
+    .coef = -0.0045,
+    .slowAvg = 0.0 },
       
     // Battery voltage
-    { .ADC_id = ADC_BATTERY_VOLTAGE, 
-      .idx = 0, .offset = VBAT_OFFSET /*-273*/ * ADC_AVG_SAMPLE, 
-      .cal = false, 
-      .sample = {0}, 
-    .coef = VBAT_COEF },
-      //.coef = 0.00180553 },
+  { .ADC_id = ADC_BATTERY_VOLTAGE, 
+    .idx = 0, 
+    .offset = VBAT_OFFSET /*-273*/ * ADC_AVG_SAMPLE, 
+    .cal = false, 
+    .sample = {0}, 
+    .coef = VBAT_COEF,
+    .slowAvg = 0.0 },
+    //.coef = 0.00180553 },
       
     // Battery current
-    { .ADC_id = ADC_BATTERY_CURRENT, 
-      .idx = 0, 
-      .offset = 7560 * ADC_AVG_SAMPLE, 
-      .cal = true, 
-      .sample = {0}, 
-      .coef = -0.02330 }};
+  { .ADC_id = ADC_BATTERY_CURRENT, 
+    .idx = 0, 
+    .offset = 7560 * ADC_AVG_SAMPLE, 
+    .cal = true, 
+    .sample = {0}, 
+    .coef = -0.02330,
+    .slowAvg = 0.0 },
+ };
       
       
 ledc_channel_config_t ledc_channel = {
@@ -97,6 +102,46 @@ ledc_channel_config_t ledc_channel = {
       .hpoint     = 0,
       .timer_sel  = LEDC_TIMER_1
   };
+  
+  
+static unsigned char g_level = 0;
+
+void change_level( )
+{  
+  g_level++;
+
+  switch( g_level )
+  {
+  default:
+    g_level = 0;
+  case 0 :
+    gpio_set_level( GPIO_LEVEL_1, 0 );
+    gpio_set_level( GPIO_LEVEL_2, 0 );
+    break;
+  case 1 :
+    gpio_set_level( GPIO_LEVEL_1, 1 );
+    gpio_set_level( GPIO_LEVEL_2, 0 );
+    break;
+  case 2 :
+    gpio_set_level( GPIO_LEVEL_1, 1 );
+    gpio_set_level( GPIO_LEVEL_2, 1 );
+    break;
+  
+  }
+}
+
+unsigned char get_level( )
+{
+  return g_level;
+}
+  
+void power_off( )
+{
+  // Disabled power OFF
+  gpio_set_level( GPIO_LEVEL_1, 0 );
+  gpio_set_level( GPIO_LEVEL_2, 0 );
+  gpio_set_level( GPIO_POWER_OFF, 1 );
+}
 
 static void sample_ADC( tADC_Reading* pADC, bool calibrate )
 {
@@ -104,6 +149,7 @@ static void sample_ADC( tADC_Reading* pADC, bool calibrate )
     if( pADC->idx >= ADC_AVG_SAMPLE )
     {
         pADC->idx = 0;
+        pADC->slowAvg = ( pADC->slowAvg * 9.0 + pADC->value ) / 10.0;
     } 
     // Sample and remove the offset
     pADC->sample[pADC->idx] = adc1_get_raw(pADC->ADC_id);
@@ -122,11 +168,13 @@ static void sample_ADC( tADC_Reading* pADC, bool calibrate )
     }
     pADC->value = (( pADC->sum - pADC->offset ) / ADC_AVG_SAMPLE ) * pADC->coef;
     pADC->idx++;
-    
-    if( pADC->idx == ADC_AVG_SAMPLE ) 
-    {
-      //ESP_LOGW( TAG, "ADC[%d] = %d", pADC->ADC_id, pADC->sum / ADC_AVG_SAMPLE );
-    }
+}
+
+static bool IsIdle( tADC_Reading* pADC, float threshold )
+{
+  float delta = pADC->value - pADC->slowAvg;
+  if( delta < 0.0f ) delta = -delta;
+  return ( delta < threshold );
 }
 
 extern uint32_t g_PutEvents;
@@ -139,6 +187,8 @@ static void adc_read_task(void *pvParameters)
   uint64_t lastEnergyTime = 0;
   float batCap = 20.0; // BAT_FULL;
   int pwmDuty = 0;
+  
+  static uint64_t nextIdleTimeout = 0;
   
   while (1) {
     // ESP_LOGI( TAG, "ADC Read task" );
@@ -212,17 +262,26 @@ static void adc_read_task(void *pvParameters)
           ADC[BAT_CUR].value,
           ADC[BAT_VOL].value,
           pwmDuty );
+       
+        if( !IsIdle( &ADC[GEN_CUR], 0.25 ) ||
+            !IsIdle( &ADC[BAT_CUR], 0.5 ) ||
+            nextIdleTimeout == 0 )
+        {         
+          nextIdleTimeout = now + (15ULL * 60ULL * 1000000ULL);
+          ESP_LOGI( TAG, "Not idle  %.1f A  - %.1f A", ADC[GEN_CUR].slowAvg, ADC[GEN_CUR].value );
+        }
+        
+        if( now > nextIdleTimeout )
+        {
+          power_off( );
+        }    
+               
       }        
     }
     vTaskDelay( 20 / portTICK_PERIOD_MS);    
   }
 }
 
-void power_off( )
-{
-  // Disabled power OFF
-  gpio_set_level( GPIO_POWER_OFF, 1 );
-}
 
 void start_PowerManager( )
 {
@@ -276,7 +335,10 @@ void start_PowerManager( )
   gpio_set_level( GPIO_POWER_OFF, 0 );
   // Enable sensor power
   gpio_set_level( GPIO_SENS_PWR_EN, 1 );
-
+  
+  gpio_set_level( GPIO_LEVEL_1, 0 );
+  gpio_set_level( GPIO_LEVEL_2, 0 );
+  
   xTaskCreate(adc_read_task, "adc_read_task", 4096, NULL, 1, NULL);
   
 }
